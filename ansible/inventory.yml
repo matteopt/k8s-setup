@@ -1,0 +1,16 @@
+all:
+  vars:
+    domain: kubernetes.local
+  hosts:
+    bootstrap:
+      ansible_host: alpine1
+      hostname: alpine1
+  children:
+    workers:
+      hosts:
+        worker1:
+          ansible_host: alpine2
+          hostname: alpine2
+        worker2:
+          ansible_host: alpine3
+          hostname: alpine3

@@ -1,0 +1,107 @@
+- name: Setup
+  hosts:
+    - bootstrap
+    - workers
+  tasks:
+    - name: Write to /etc/hostname
+      ansible.builtin.copy:
+        content: "{{ hostname }}"
+        dest: /etc/hostname
+    - name: Write to /etc/hosts
+      ansible.builtin.copy:
+        content: |
+          127.0.0.1 {{ hostname }} {{ hostname }}.{{ domain }}
+          ::1       {{ hostname }} {{ hostname }}.{{ domain }}
+        dest: /etc/hosts
+      register: etc_hosts
+    - name: Reload hostname
+      ansible.builtin.command: hostname -F /etc/hostname
+      when: etc_hosts.changed
+    - name: Install containerd, kubelet, kubeadm, kubectl, flannel/CNI stuff
+      community.general.apk:
+        name:
+          - containerd
+          - kubelet
+          - kubeadm
+          - kubectl
+          - cni-plugin-flannel
+          - cni-plugins
+          - flannel
+          - flannel-contrib-cni
+        update_cache: true
+    - name: Enable and start containerd
+      ansible.builtin.service:
+        name: containerd
+        enabled: true
+        state: started
+    - name: Enable kubelet
+      ansible.builtin.service:
+        name: kubelet
+        enabled: true
+    - name: Enable net.ipv4.ip_forward
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+    - name: Enable net.bridge.bridge-nf-call-iptables
+      ansible.posix.sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: 1
+    - name: Load br_netfilter on reboot
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: "br_netfilter"
+        mode: "644"
+    - name: Load br_netfilter
+      ansible.builtin.modprobe:
+        name: br_netfilter
+
+- name: Setup (bootstrap)
+  hosts:
+    - bootstrap
+  tasks:
+    - name: Check if cluster exists
+      ansible.builtin.shell:
+        cmd: kubectl config get-clusters | tail -n +2
+      changed_when: false
+      register: kubectl_get_clusters
+    - name: kubeadm init
+      ansible.builtin.shell:
+        cmd: kubeadm init --pod-network-cidr=10.244.0.0/16
+      when: kubectl_get_clusters.stdout == ""
+    - name: Ensure /root/.kube exists
+      ansible.builtin.file:
+        path: /root/.kube
+        state: directory
+        mode: "700"
+    - name: Create /root/.kube/config link
+      ansible.builtin.file:
+        path: /root/.kube/config
+        src: /etc/kubernetes/admin.conf
+        state: link
+    - name: Check if flannel stuff applied
+      ansible.builtin.shell:
+        cmd: kubectl diff -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+      register: flannel_diff
+      changed_when: false
+    - name: Apply flannel stuff
+      ansible.builtin.shell:
+        cmd: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+      when: flannel_diff.rc != 0
+
+- name: Setup (workers)
+  hosts:
+    - workers
+  tasks:
+    - name: Check if node already joined (kubelet kubeconfig exists)
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_kubeconfig
+    - name: Get join command
+      ansible.builtin.command: kubeadm token create --print-join-command
+      register: kubeadm_join
+      delegate_to: bootstrap
+      when: not kubelet_kubeconfig.stat.exists
+    - name: Join cluster
+      ansible.builtin.shell:
+        cmd: "{{ kubeadm_join.stdout }}"
+      when: not kubelet_kubeconfig.stat.exists
