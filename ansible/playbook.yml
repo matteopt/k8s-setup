@@ -78,15 +78,27 @@
         path: /root/.kube/config
         src: /etc/kubernetes/admin.conf
         state: link
+    - name: Confirm we can get namespaces
+      ansible.builtin.command: kubectl get ns
+      changed_when: false
+    - name: Check if kube-flannel namespace exists
+      ansible.builtin.command: kubectl get ns kube-flannel
+      register: kube_flannel_ns_check
+      failed_when: false
+      changed_when: false
+    - name: Create kube-flannel namespace
+      ansible.builtin.command: kubectl create ns kube-flannel
+      when: kube_flannel_ns_check.rc != 0
     - name: Check if flannel stuff applied
       ansible.builtin.shell:
         cmd: kubectl diff -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
       register: flannel_diff
       changed_when: false
+      failed_when: flannel_diff.rc > 1
     - name: Apply flannel stuff
       ansible.builtin.shell:
         cmd: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
-      when: flannel_diff.rc != 0
+      when: flannel_diff.rc == 1
 
 - name: Setup (workers)
   hosts:
