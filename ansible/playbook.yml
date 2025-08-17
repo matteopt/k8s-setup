@@ -29,11 +29,14 @@
           - flannel
           - flannel-contrib-cni
         update_cache: true
-    - name: Enable and start containerd
+    - name: Enable and start ntpd, containerd
       ansible.builtin.service:
-        name: containerd
+        name: "{{ item }}"
         enabled: true
         state: started
+      loop:
+        - ntpd
+        - containerd
     - name: Enable kubelet
       ansible.builtin.service:
         name: kubelet
@@ -54,6 +57,21 @@
     - name: Load br_netfilter
       ansible.builtin.modprobe:
         name: br_netfilter
+    - name: Load rbd on reboot
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/rook.conf
+        content: "rbd"
+        mode: "644"
+    - name: Load rbd
+      ansible.builtin.modprobe:
+        name: rbd
+    - name: Check if /run/udev exists
+      ansible.builtin.stat:
+        path: /run/udev
+      register: udev_check
+    - name: Setup udev
+      ansible.builtin.command: setup-devd udev
+      when: not udev_check.stat.exists
 
 - name: Setup (bootstrap)
   hosts:

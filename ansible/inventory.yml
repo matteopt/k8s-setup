@@ -14,3 +14,6 @@ all:
         worker2:
           ansible_host: alpine3
           hostname: alpine3
+        worker3:
+          ansible_host: alpine4
+          hostname: alpine4
