@@ -10,8 +10,8 @@
     - name: Write to /etc/hosts
       ansible.builtin.copy:
         content: |
-          127.0.0.1 {{ hostname }} {{ hostname }}.{{ domain }}
-          ::1       {{ hostname }} {{ hostname }}.{{ domain }}
+          127.0.0.1 localhost {{ hostname }} {{ hostname }}.{{ domain }}
+          ::1       localhost {{ hostname }} {{ hostname }}.{{ domain }}
         dest: /etc/hosts
       register: etc_hosts
     - name: Reload hostname
